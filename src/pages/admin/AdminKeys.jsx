@@ -25,7 +25,7 @@ function AdminKeys() {
     } else {
       setKeys([]);
     }
-  }, [selectedId]);
+  }, [selectedGame]);
 
   function handleAddKeys(e) {
     e.preventDefault();
