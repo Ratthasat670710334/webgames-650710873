@@ -1,203 +1,106 @@
-
 import { createContext, useContext, useState } from 'react';
+import {
+  login as loginRequest,
+  register as registerRequest
+} from '../api/backend';
 
 const AuthContext = createContext(null);
 
 const TOKEN_KEY = 'gamekey_token';
 const MEMBER_KEY = 'gamekey_member';
-const USERS_KEY = 'gamekey_users';
-const ACCOUNT_KEY = 'gamekey_account_overrides';
 
-const demoUser = {
-  id: 1,
-  email: 'demo@moviehub.test',
-  password: '1234',
-  displayName: 'Demo User',
-  role: 'member'
-};
-
-const adminUser = {
-  id: 0,
-  email: 'admin@gamekey.test',
-  password: 'admin123',
-  displayName: 'Admin',
-  role: 'admin'
-};
-
-function getAccountOverrides() {
-  return JSON.parse(localStorage.getItem(ACCOUNT_KEY) || '{}');
+function clearStoredSession() {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(MEMBER_KEY);
 }
 
-function getAllUsers() {
-  const users = JSON.parse(localStorage.getItem(USERS_KEY) || '[]');
-  const overrides = getAccountOverrides();
+function getStoredSession() {
+  const token = localStorage.getItem(TOKEN_KEY);
 
-  const updatedDemo = { ...demoUser, ...overrides.demo };
-  const updatedAdmin = { ...adminUser, ...overrides.admin };
+  if (!token || token.startsWith('mock-token-')) {
+    clearStoredSession();
+    return { token: null, member: null };
+  }
 
-  return [updatedDemo, updatedAdmin, ...users];
+  try {
+    const member = JSON.parse(localStorage.getItem(MEMBER_KEY) || 'null');
+    if (
+      !member ||
+      member.id == null ||
+      typeof member.email !== 'string' ||
+      typeof member.displayName !== 'string' ||
+      typeof member.role !== 'string'
+    ) {
+      clearStoredSession();
+      return { token: null, member: null };
+    }
+
+    return { token, member };
+  } catch {
+    clearStoredSession();
+    return { token: null, member: null };
+  }
+}
+
+function getSessionFromResponse(response) {
+  const { token, member } = response || {};
+  if (
+    typeof token !== 'string' ||
+    token.length === 0 ||
+    !member ||
+    member.id == null ||
+    typeof member.email !== 'string' ||
+    typeof member.displayName !== 'string' ||
+    typeof member.role !== 'string'
+  ) {
+    throw new Error('เซิร์ฟเวอร์ส่งข้อมูลเข้าสู่ระบบไม่ครบ');
+  }
+
+  return { token, member };
 }
 
 export function AuthProvider({ children }) {
-  const [token, setToken] = useState(
-    () => localStorage.getItem(TOKEN_KEY)
-  );
-
-  const [member, setMember] = useState(
-    () => JSON.parse(localStorage.getItem(MEMBER_KEY) || 'null')
-  );
-
+  const [session, setSession] = useState(getStoredSession);
   const [isGuest, setIsGuest] = useState(false);
+  const { token, member } = session;
 
-  function remember(user) {
-    const newToken = 'mock-token-' + user.id;
-
-    const memberData = {
-      id: user.id,
-      email: user.email,
-      displayName: user.displayName,
-      role: user.role
-    };
-
-    setToken(newToken);
-    setMember(memberData);
+  function remember(response) {
+    const nextSession = getSessionFromResponse(response);
+    setSession(nextSession);
     setIsGuest(false);
-
-    localStorage.setItem(TOKEN_KEY, newToken);
-    localStorage.setItem(MEMBER_KEY, JSON.stringify(memberData));
+    localStorage.setItem(TOKEN_KEY, nextSession.token);
+    localStorage.setItem(MEMBER_KEY, JSON.stringify(nextSession.member));
   }
 
   async function login(email, password) {
-    const allUsers = getAllUsers();
-
-    const user = allUsers.find(
-      (item) =>
-        item.email.toLowerCase() === email.toLowerCase() &&
-        item.password === password
-    );
-
-    if (!user) {
-      throw new Error('อีเมลหรือรหัสผ่านไม่ถูกต้อง');
-    }
-
-    remember(user);
+    const response = await loginRequest(email, password);
+    remember(response);
   }
 
   async function register(email, password, displayName) {
-    const users = JSON.parse(
-      localStorage.getItem(USERS_KEY) || '[]'
-    );
-
-    const allUsers = getAllUsers();
-
-    const emailExists = allUsers.some(
-      (user) => user.email.toLowerCase() === email.toLowerCase()
-    );
-
-    if (emailExists) {
-      throw new Error('อีเมลนี้ถูกใช้งานแล้ว');
-    }
-
-    const newUser = {
-      id: Date.now(),
-      email,
-      password,
-      displayName,
-      role: 'member'
-    };
-
-    users.push(newUser);
-
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-
-    remember(newUser);
+    await registerRequest(email, password, displayName);
+    const response = await loginRequest(email, password);
+    remember(response);
   }
 
-  function updateProfile(displayName, email, newPassword) {
+  function updateProfile() {
     if (!member) {
       throw new Error('กรุณาเข้าสู่ระบบก่อน');
     }
 
-    const allUsers = getAllUsers();
-
-    const emailExists = allUsers.some(
-      (user) =>
-        user.email.toLowerCase() === email.toLowerCase() &&
-        String(user.id) !== String(member.id)
-    );
-
-    if (emailExists) {
-      throw new Error('อีเมลนี้ถูกใช้งานแล้ว');
-    }
-
-    const currentUser = allUsers.find(
-      (user) => String(user.id) === String(member.id)
-    );
-
-    if (!currentUser) {
-      throw new Error('ไม่พบบัญชีผู้ใช้');
-    }
-
-    const updatedUser = {
-      ...currentUser,
-      displayName,
-      email,
-      password: newPassword || currentUser.password
-    };
-
-    if (member.id === demoUser.id && member.role === 'member') {
-      const overrides = getAccountOverrides();
-
-      overrides.demo = {
-        displayName: updatedUser.displayName,
-        email: updatedUser.email,
-        password: updatedUser.password
-      };
-
-      localStorage.setItem(ACCOUNT_KEY, JSON.stringify(overrides));
-    } else if (member.id === adminUser.id && member.role === 'admin') {
-      const overrides = getAccountOverrides();
-
-      overrides.admin = {
-        displayName: updatedUser.displayName,
-        email: updatedUser.email,
-        password: updatedUser.password
-      };
-
-      localStorage.setItem(ACCOUNT_KEY, JSON.stringify(overrides));
-    } else {
-      const users = JSON.parse(
-        localStorage.getItem(USERS_KEY) || '[]'
-      );
-
-      const updatedUsers = users.map((user) =>
-        String(user.id) === String(member.id) ? updatedUser : user
-      );
-
-      localStorage.setItem(USERS_KEY, JSON.stringify(updatedUsers));
-    }
-
-    remember(updatedUser);
-
-    return true;
+    throw new Error('Backend ยังไม่มี API สำหรับแก้ไขโปรไฟล์');
   }
 
   function loginAsGuest() {
-    setToken(null);
-    setMember(null);
+    setSession({ token: null, member: null });
     setIsGuest(true);
-
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(MEMBER_KEY);
+    clearStoredSession();
   }
 
   function logout() {
-    setToken(null);
-    setMember(null);
+    setSession({ token: null, member: null });
     setIsGuest(false);
-
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(MEMBER_KEY);
+    clearStoredSession();
   }
 
   const isAdmin = member?.role === 'admin';
