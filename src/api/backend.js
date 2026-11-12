@@ -3,7 +3,8 @@
 
 // '' = origin เดียวกับหน้าเว็บ CRA จะ proxy /api ไปที่ http://localhost:4000 ให้ (ตั้งใน package.json)
 // ตอนต่อ Go จริง ตั้ง REACT_APP_API_URL=https://api.ทีมเรา.xyz ใน .env และบน Vercel
-const BASE = process.env.REACT_APP_API_URL || '';
+const BASE = process.env.REACT_APP_API_URL || 'https://webgamekey-2026.onrender.com';
+
 
 // ฟังก์ชันเดียวที่ fetch จริง ทุกฟังก์ชันด้านล่างเรียกผ่านตัวนี้
 export async function apiFetch(path, { method = 'GET', body, token } = {}) {
@@ -21,11 +22,14 @@ export async function apiFetch(path, { method = 'GET', body, token } = {}) {
   const data = await res.json()                              //    อ่านคำตอบเป็น JSON
     .catch(() => ({ error: 'server ไม่ได้ตอบเป็น JSON' }));
   if (!res.ok) {                                             // 4) 400 / 401 / 404 / 409 มาลงตรงนี้
-    const err = new Error(
+    /*const err = new Error(
       data.error?.message ??
       data.error ??
       `server ตอบกลับ ${res.status}`
-    );
+    );*/
+
+
+    const err = new Error(data.error?.message ?? data.error ?? `server ตอบกลับ ${res.status}`);
     err.status = res.status;                                 //    แนบเลขไว้ให้หน้าเว็บใช้ต่อ
     throw err;
   }
